@@ -188,6 +188,16 @@ class display_4c7s{
 				}
 				catch(...){}
 			}
+
+			for(int i = 0; i < digitC; i++){
+				int digit = *(digits[i]);
+
+				try{
+					gpio_init(digit);
+					gpio_set_dir(digit, GPIO_OUT);
+				}
+				catch(...){}
+			}
 		}
 
 		void showChar(int pos, uint16_t code){
@@ -200,7 +210,7 @@ class display_4c7s{
 			}
 		}
 
-		void showNum(int number){
+		void showNum(int number){ // не уверен что работает, не проверял, будьте готовы ловить сегфолты
 			int num = number > 9999 ? 9999 : number;
 			char snum[1024];
 
@@ -230,6 +240,7 @@ Button add = *(new Button(3));
 Button start = *(new Button(17));
 Button res = *(new Button(9));
 Buzzer speaker = *(new Buzzer(15));
+//display_4c7s display = *(new display_4c7s(18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 15)); // йоу этот йоу класс йоу еще йоу не йоу готов йоу
 
 void cooldown(int* cd, piLed* led){
 	int cooldown;
