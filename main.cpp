@@ -51,6 +51,7 @@ class Sound{
 class piLed{ // встроенный светодиод (класс не статичный просто потому что)
 	private:
 		int pin = PICO_DEFAULT_LED_PIN;
+		bool state;
 	public:
 		piLed(){
 			try{
@@ -60,13 +61,17 @@ class piLed{ // встроенный светодиод (класс не ста�
 				gpio_init(pin);
 				gpio_set_dir(pin, GPIO_OUT);
 			}
+
+			state = false;
 		}
 
 		void on(){
 			gpio_put(pin, 1);
+			state = true;
 		}
 		void off(){
 			gpio_put(pin, 0);
+			state = false;
 		}
 
 		void single(int duration){
@@ -74,6 +79,8 @@ class piLed{ // встроенный светодиод (класс не ста�
 			sleep_ms(duration);
 			gpio_put(pin, 0);
 			sleep_ms(duration);
+
+			state = false;
 		}
 
 		void repeat(int times, int duration){
@@ -81,6 +88,17 @@ class piLed{ // встроенный светодиод (класс не ста�
 
 			for(int i = 0; i < times; i++){
 				single(duration / 2);
+			}
+
+			state = false;
+		}
+
+		void toggle(){
+			if(!state){
+				on();
+			}
+			else{
+				off();
 			}
 		}
 
@@ -93,7 +111,7 @@ class piLed{ // встроенный светодиод (класс не ста�
 				off();
 				sleep_ms(s);
 			}
-		}
+		} // депрекейтед (на самом деле я просто не доделал этот метод но тссс)
 };
 
 class Button{ // кнопка
@@ -141,9 +159,18 @@ class Buzzer/*: public SomeCoolPinClass*/ { // пищалка (на самом �
 		}
 };
 
+/*
+ * четырёхсимвольный семисегментный дисплей
+ * конструктор: x 12 int`ов / массив с 12 int`ами, первые 4 - D1, D2, D3, D4, остальные 8 - A - G и DP (точка)
+ * методы:
+ *
+ * void showChar(int pos, uint16_t code) --- отображает символ на экране, pos - элемент D1-D4; pos >= 0 && pos <= 4, code - байт-код символа
+ *	PFEDCBA -- пины
+ *    0b0000000 -- байты
+*/
 class display_4c7s{
 	private:
-		uint16_t numTable[10] = {
+		uint16_t numTable[10] = { // коды цифр
 			0b1111110, // 0
 			0b1111000, // 1
 			0b1100101, // 2
@@ -164,6 +191,8 @@ class display_4c7s{
 		int pinC = 7;
 		int* pins[8] = {&A, &B, &C, &D, &E, &F, &G, &DP};
 	public:
+		uint16_t currChar;
+
 		display_4c7s(int d1, int d2, int d3, int d4, int a, int b, int c, int d, int e, int f, int g, int dp){
 			D1 = d1;
 			D2 = d2;
@@ -198,6 +227,27 @@ class display_4c7s{
 				}
 				catch(...){}
 			}
+
+			this->currChar = 0;
+		}
+		
+		display_4c7s(int numz[12]){
+			for(int i = 0; i < 12; i++){
+				try{
+					gpio_init(numz[i]);
+					gpio_set_dir(numz[i], GPIO_OUT);
+				}
+				catch(...){}
+
+				if(i < 4){
+					*(digits[i]) = numz[i];
+				}
+				else{
+					*(pins[i - 4]) = numz[i];
+				}
+			}
+
+			this->currChar = 0;
 		}
 
 		void showChar(int pos, uint16_t code){
@@ -207,6 +257,17 @@ class display_4c7s{
 
 			for(int i = 0; i < 7; i++){
 				if((c << i) & (code)){gpio_put(*(pins[i]), 1);}
+			}
+
+			this->currChar = code;
+		}
+
+		void showSequence(uint16_t chars[4], int delay){
+			for(int i = 0; i < 4; i++){
+				this->showChar(i, chars[i]);
+				sleep_ms(delay / 2);
+				this->reset();
+				sleep_ms(delay / 2);
 			}
 		}
 
@@ -231,6 +292,8 @@ class display_4c7s{
 			for(int i = 0; i < digitC; i++){
 				gpio_put(*(digits[i]), 0);
 			}
+
+			this->currChar = 0;
 		}
 };
 
@@ -239,8 +302,7 @@ class display_4c7s{
 Button add = *(new Button(3));
 Button start = *(new Button(17));
 Button res = *(new Button(9));
-Buzzer speaker = *(new Buzzer(15));
-//display_4c7s display = *(new display_4c7s(18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 15)); // йоу этот йоу класс йоу еще йоу не йоу готов йоу
+display_4c7s display = *(new display_4c7s((int[12]){18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 15})); // йоу этот йоу класс йоу еще йоу не йоу готов йоу
 
 void cooldown(int* cd, piLed* led){
 	int cooldown;
@@ -263,14 +325,43 @@ void cooldown(int* cd, piLed* led){
 	(*led).on();
 }
 
-void devMode(){
-	reset_usb_boot(0, 0);
+void devMode(piLed* led){
+	while(1){
+		if(add.isPressed()){
+			sleep_ms(300);
+			if(!add.isPressed()){
+				led->toggle();
+				sleep_ms(500);
+			}
+			else{
+				led->single(100);
+				reset_usb_boot(0, 0);
+			}
+		}
+		else if(start.isPressed()){
+			sleep_ms(300);
+			if(start.isPressed()){break;}
+
+			if(!display.currChar){
+				led->single(500);
+				display.showChar(0, 0b0100010);
+			}
+			else{
+				led->single(1500);
+				display.reset();
+			}
+		}
+	}
+
+	led->repeat(10, 50); // прощание при выходе :(
 }
 
 int main() {
 	stdio_init_all();
 
 	ledInit();
+
+	display.showChar(0, 0b1000000);
 
 	gpio_init(OUT_PIN);
 	gpio_set_dir(OUT_PIN, GPIO_OUT);
@@ -294,7 +385,7 @@ int main() {
 			sleep_ms(300);
 		}
 		else if(start.isPressed()){
-			if(startInARow >= 3){led.single(1000); devMode();}
+			if(startInARow >= 3){startInARow = 0; led.single(1000); devMode(&led); sleep_ms(150); continue;}
 
 			else if(count <= 0){startInARow++; led.single(100); continue;}
 			else{led.repeat(3, 100);}
